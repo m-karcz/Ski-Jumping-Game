@@ -2,7 +2,7 @@
 
 ![4 screens](https://i.imgur.com/jz3GKXO.png)
 
-Gameplay: [.gif](https://i.imgur.com/TLbBSjZ.gifv) [.gifv](https://i.imgur.com/TLbBSjZ.gifv)
+Gameplay: [.gif](https://i.imgur.com/TLbBSjZ.gifv) [.gfy](https://gfycat.com/KeenHideousKilldeer)
 
 ### v1:
 - Using matrix lib from [this](https://github.com/mamcienahita/Simple-Algebra-Library) repo - useful for physics calculations
