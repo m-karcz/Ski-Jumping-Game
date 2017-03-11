@@ -1,161 +1,82 @@
 #include "Physics.hpp"
 #include <cmath>
 
-namespace SkiJump
+namespace Physics
 {
-
-	Physics::Physics(SDL_Renderer* renderer, std::shared_ptr<Jumper> jumper, std::shared_ptr<Terrain> terrain, const double dt) : jumper(jumper), terrain(terrain), dt(dt)
+	Wind::Wind()
 	{
-		wind=std::make_unique<Wind>(renderer);
+		init();
+	}
+	void Wind::init()
+	{
+		value = Random::getReal(min, max); 
+	}
+	void Wind::tick()
+	{
+		value += Random::getReal(min/10.0, max/10.0);
+	}
+	double Wind::getValue()
+	{
+		return value;
 	}
 
-	void Physics::update_jumper()
+	Wind wind;
+
+	MyAlgLib::Vector2d<> rampForce(Jumper& jumper, Terrain& terrain)
 	{
-		using namespace MyAlgLib;
-		switch(jumper->state)
-		{
-			case JumperState::Wait:
-				MyAlgLib::get_y(jumper->location) = terrain->height(get_jumper_x());
-				jumper->body->angles[0] = MyAlgLib::rad2deg(terrain->angle(get_x(jumper->location)));
-				break;
-			case JumperState::SpeedingUp:
-				update_speeding();
-				if(get_x(jumper->location) > 195.0)
-				{
-					jumper->jump(201.0);
-				}
-				break;
-			case JumperState::Jumping:
-				update_jumping();
-				break;
-			case JumperState::TryingToLand:
-				update_trying_to_land();
-				break;
-			case JumperState::Flight:
-				update_flight();
-				break;
-			case JumperState::Landing:
-				update_landing();
-				break;
-			default:
-				break;
-		}
-		jumper->update_offset();
-		jumper->update();
-		wind->update();
+		const double gravityLength = MyAlgLib::length(gravity);
+		double angle = std::tan(terrain.getSlope(get_x(jumper.location)));
+		double actualLength = gravityLength * std::sin(angle);
+		return MyAlgLib::Vector2d_factory(actualLength * std::sin(angle), actualLength * std::cos(angle));
 	}
 
-	void Physics::update_speeding()
+	MyAlgLib::Vector2d<> airResistance(Jumper& jumper)
 	{
-		using namespace MyAlgLib;
-		jumper->velocity = jumper->velocity + dt* 0.8 * ramp_force(terrain->angle(get_x(jumper->location)));
-		slide_on_terrain();
-		jumper->body->angles[0] = MyAlgLib::rad2deg(terrain->angle(get_x(jumper->location)));
-		return;
+		const double coefficient = 0.002;
+		const double body_angle = MyAlgLib::deg2rad(jumper.angles[0] + jumper.angles[1]);
+		const double velocity_angle = MyAlgLib::arg(jumper.velocity);
+		return -1.0 * coefficient * MyAlgLib::length(jumper.velocity) * std::abs(std::sin(body_angle - velocity_angle)) * jumper.velocity;
 	}
 
-	void Physics::update_jumping()
+	MyAlgLib::Vector2d<> airForce(Jumper& jumper)
 	{
-		using namespace MyAlgLib;
-		jumper->velocity = jumper->velocity + dt * (gravity + Vector2d_factory(0.0, 2.0));
-		jumper->location = jumper->location + dt * jumper->velocity;
-		jumper->timer--;
-		if(jumper->timer==0)
-			jumper->state = JumperState::Flight;
-		return;
+		const double coefficient = 0.02;
+		const double body_angle = MyAlgLib::deg2rad(jumper.angles[0] + jumper.angles[1]);
+		return coefficient * std::sin(body_angle) * wind.getValue() * MyAlgLib::Vector2d_factory(std::sin(body_angle), std::cos(body_angle));
 	}
 
-	void Physics::update_flight()
+	void updateOnTerrain(Jumper& jumper, Terrain& terrain)
 	{
-		using namespace MyAlgLib;
-		jumper->velocity = jumper->velocity + dt  * (gravity + wind->get_force(jumper->body->angles[1]) + air_resistance_force());
-		jumper->location = jumper->location + dt * jumper->velocity;
-		if(get_x(jumper->location) > 210.0 && check_if_touched_terrain())
-		{
-			proceed_landing();
-		}
-		return;
+		get_y(jumper.location) = terrain.getHeight(get_x(jumper.location));
 	}
 
-	void Physics::update_trying_to_land()
+	void setForcesOnRamp(Jumper& jumper, Terrain& terrain)
 	{
-		using namespace MyAlgLib;
-		jumper->velocity = jumper->velocity + dt * gravity;
-		jumper->location = jumper->location + dt * jumper->velocity;
-		double landing_angle = terrain->angle(get_x(jumper->location));
-		if(jumper->timer>0)
-		{
-			jumper->body->angles[0]+=((landing_angle-jumper->body->angles[0])/static_cast<double>(jumper->timer));
-			jumper->timer--;
-		}
-		else
-		{
-			jumper->body->angles[0]=landing_angle;
-		}
-		if(check_if_touched_terrain())
-			proceed_landing();
-		return;
+		jumper.velocity += dt * rampForce(jumper, terrain);
+		jumper.location += dt * jumper.velocity;
+		updateOnTerrain(jumper, terrain);
 	}
 
-	void Physics::update_landing()
+	void setForcesAfterJump(Jumper& jumper)
 	{
-		using namespace MyAlgLib;
-		if(get_x(jumper->velocity) > 0)
-		{
-			jumper->velocity = jumper->velocity + dt * Vector2d_factory(-1.0, 0.0);
-			slide_on_terrain();
-		}
-		jumper->body->angles[0] = MyAlgLib::rad2deg(terrain->angle(get_x(jumper->location)));
-		return;
+		jumper.velocity = jumper.velocity + dt * (airForce(jumper) + airResistance(jumper) - gravity);
+		jumper.location += dt * jumper.velocity;
 	}
 
-	MyAlgLib::Vector2d<double> Physics::ramp_force(double rad)
+	void setForcesInFlight(Jumper& jumper)
 	{
-		using namespace MyAlgLib;
-		Vector2d<double> vector;
-		double gravity_length=length(gravity)*2;
-		get_x(vector)=gravity_length * std::sin(rad) * std::sin(rad);
-		get_y(vector)=gravity_length * std::sin(rad) * std::cos(rad);
-		return vector;
+		jumper.velocity = jumper.velocity + dt * (gravity + airForce(jumper) + airResistance(jumper));
+		jumper.location += dt * jumper.velocity;
 	}
 
-	unsigned int Physics::get_jumper_x()
+	void setForcesAfterLand(Jumper& jumper, Terrain& terrain)
 	{
-		return static_cast<unsigned int>(MyAlgLib::get_x(jumper->location));
+		get_x(jumper.velocity) -= 1.0;
+		if(get_x(jumper.velocity) < 0.0)
+			get_x(jumper.velocity) = 0.0;
+		updateOnTerrain(jumper, terrain);
 	}
 
-	void Physics::update_location()
-	{
-		jumper->location += dt * jumper->velocity;	
-	}
 
-	void Physics::slide_on_terrain()
-	{
-		using namespace MyAlgLib;
-		jumper->velocity = length(jumper->velocity) * rotation_matrix_rad(terrain->angle(get_x(jumper->location))) * Vector2d_factory(1.0, 0.0);
-		update_location();
-		MyAlgLib::get_y(jumper->location) = terrain->height(get_jumper_x());
-	}
 
-	bool Physics::check_if_touched_terrain()
-	{
-		return get_y(jumper->location) <= terrain->height(get_x(jumper->location));
-	}
-
-	void Physics::proceed_landing()
-	{
-		jumper->distance = terrain->get_distance(static_cast<int>(get_x(jumper->location)));
-		jumper->state = JumperState::Landing;
-		jumper->landing(jumper->body->phase == Jumper::Body::Phase::WaitForLand);
-	}
-
-	MyAlgLib::Vector2d<double> Physics::air_resistance_force()
-	{
-		const double coeff = 0.0002;
-		using namespace MyAlgLib;
-		double len = length(jumper->velocity);
-		double body_angle = deg2rad(jumper->body->angles[0]+jumper->body->angles[1]);
-		double force_angle = arg(jumper->velocity);
-		return - coeff * len * len * std::abs(std::sin(body_angle - force_angle)) * rotation_matrix_rad(force_angle) * Vector2d_factory(1.0, 0.0);
-	}
 }

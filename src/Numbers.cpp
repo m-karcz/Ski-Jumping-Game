@@ -1,65 +1,48 @@
 #include "Numbers.hpp"
-#include <stack>
-#include <sstream>
-#include <iomanip>
-#include <iostream>
 
-namespace SkiJump
+namespace Numbers
 {
-	std::shared_ptr<SDL_Texture> Numbers::numbers_texture;
-	std::unique_ptr<SDL_Rect> Numbers::location = std::make_unique<SDL_Rect>();
-	std::unique_ptr<SDL_Rect> Numbers::number = std::make_unique<SDL_Rect>();
-	int Numbers::w;
-	int Numbers::h;
-
-	void Numbers::init_textures(SDL_Renderer* renderer)
+	void draw(BetterSDL::Renderer& renderer, double value, int x, int y, int precision)
 	{
-		SDL_Surface* temp_surf=SDL_LoadBMP("img/numbers.bmp");
-		if(temp_surf!=nullptr)
+		class NumbersDrawer : public SimpleDrawable
 		{
-			SDL_SetColorKey(temp_surf, SDL_TRUE, SDL_MapRGB(temp_surf->format, 100, 100, 150));
-			numbers_texture=std::shared_ptr<SDL_Texture>(SDL_CreateTextureFromSurface(renderer, temp_surf), SDL_DestroyTexture);
-			SDL_FreeSurface(temp_surf);
-			SDL_QueryTexture(numbers_texture.get(), nullptr, nullptr, &w, &h);
-			w/=12;
-		}
-	}
-
-	void Numbers::draw_number(SDL_Renderer* renderer, double value, int x, int y)
-	{
-		if(!numbers_texture)
-			init_textures(renderer);
-		int n=static_cast<int>(value);
-		location->w = number->w = w;
-		location->h = number->h = h;
-		location->x = x;
-		location->y = y;
+		public:
+			NumbersDrawer(BetterSDL::Renderer& renderer) : SimpleDrawable{"img/numbers.bmp"}
+			{
+				destination.parseTexture(getTexture(renderer));
+				gap = destination.ptr->w / charsAmount;
+				destination.ptr->w = gap;
+				source.ptr->w = gap;
+				source.ptr->h = destination.ptr->h;
+			}
+			void draw(BetterSDL::Renderer& renderer) override
+			{
+					renderer.simpleDraw(getTexture(renderer), source, destination);
+			}
+			void setChar(char c)
+			{
+				if(c >= '0' && c <= '9')
+					source.ptr->x = gap * (c - '0');
+				if(c == '.')
+					source.ptr->x = gap * 10;
+				if(c == '-')
+					source.ptr->x = gap * 11;
+			}
+			BetterSDL::Rect destination;
+			BetterSDL::Rect source;
+			int gap=0;
+			const int charsAmount{12};
+		};
+		static NumbersDrawer drawer(renderer);
+		drawer.destination.ptr->y = y;
 		std::stringstream ss;
-		ss << std::setprecision(1) << std::fixed << value;
+		ss << std::setprecision(precision) << std::fixed << value;
+		drawer.destination.ptr->x = x - drawer.gap * ss.str().size();
 		for(char c : ss.str())
 		{
-			if(c <= '9' && c >= '0')
-			{
-				number->x = (c - '0') * w;
-				SDL_RenderCopy(renderer, numbers_texture.get(), number.get(), location.get());
-				location->x += w;
-			}
-			else
-			{
-				if( c == '.')
-				{
-					number->x = 10 * w;
-					SDL_RenderCopy(renderer, numbers_texture.get(), number.get(), location.get());
-					location->x += w;
-				}
-				if( c== '-' )
-				{
-					number->x = 11 * w;
-					location->x -= w;
-					SDL_RenderCopy(renderer, numbers_texture.get(), number.get(), location.get());
-					location->x += w;
-				}
-			}
+			drawer.setChar(c);
+			drawer.draw(renderer);
+			drawer.destination.ptr->x += drawer.gap;
 		}
 	}
 }
