@@ -4,6 +4,8 @@
 
 Gameplay: [.gif](https://i.imgur.com/TLbBSjZ.gifv) [.gfy](https://gfycat.com/KeenHideousKilldeer)
 
+[Playable Web Version](http://mcnh.ovh/skoki) ported to WebAssembly using Emscripten
+
 ### v1:
 - Using matrix lib from [this](https://github.com/mamcienahita/Simple-Algebra-Library) repo - useful for physics calculations
 - Simple physics - gravity, wind, air-resistance
